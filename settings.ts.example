@@ -1,0 +1,55 @@
+import { APISelectMenuOption } from 'discord.js';
+
+export const TOKEN = '';
+export const GUILD_ID = '';
+export const TICKET_CHANNEL_ID = '';
+export const TICKET_MESSAGE_ID = '';
+export const TICKETS_OPENED_CATEGORY = '';
+export const TICKETS_CLOSED_CATEGORY = '';
+export const TICKET_CHANNEL_MESSAGE_CONTENT = {
+  color: 0x0099FF,
+  title: 'SUPORTE',
+  description: 'Texto de descrição aqui...',
+};
+export const TICKET_CATEGORIES: APISelectMenuOption[] = [
+  {
+    label: 'SUPORTE TÉCNICO',
+    description: 'Selecione para receber suporte técnico',
+    value: 'ticket_suporte_tecnico',
+    emoji: {
+      name: '😂',
+    },
+  },
+  {
+    label: 'DENÚNCIA',
+    description: 'Selecione para fazer denúncias',
+    value: 'ticket_denuncia',
+    emoji: {
+      name: '🥰',
+    },
+  },
+  {
+    label: 'DÚVIDAS',
+    description: 'Selecione para tirar dúvidas',
+    value: 'ticket_duvidas',
+    emoji: {
+      name: '🫡',
+    },
+  },
+  {
+    label: 'CONTRIBUIÇÃO',
+    description: 'Selecione para fazer contribuições',
+    value: 'ticket_contribuicao',
+    emoji: {
+      name: '🥶',
+    },
+  },
+  {
+    label: 'OUTROS',
+    description: 'Falar sobre outros assuntos',
+    value: 'ticket_outros',
+    emoji: {
+      name: '🤬',
+    },
+  },
+];
