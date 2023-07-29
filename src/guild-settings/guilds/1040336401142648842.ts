@@ -8,6 +8,7 @@ export const GUILD_SETTINGS: GuildSettings = {
                 CREATE_NEW: "1134591969574785084",
                 OPENED_CATEGORY: "1134592285741424793",
                 CLOSED_CATEGORY: "1134592310580084917",
+                BACKUP_CHANNEL: "1134671541674725488",
             },
             PREDEFINED_MESSAGES: {
                 TICKET_CHANNEL_MESSAGE_CONTENT: {
@@ -31,6 +32,12 @@ export const GUILD_SETTINGS: GuildSettings = {
                     color: 0xff0000,
                     description: "Este ticket foi encerrado por __USER__!",
                 },
+                TICKET_REOPENED_CONTENT: {
+                    title: "Ticket Reaberto",
+                    color: 0x0099ff,
+                    description: "Este ticket foi reaberto por __USER__!",
+                },
+                CLOSED_TICKET_MESSAGE_SENT_TO_USER: "O seu ticket foi encerrado! Caso precise de mais ajuda, abra um novo ticket.",
                 ALREADY_HAVE_A_TICKET: "Você já possui um ticket aberto sobre este assunto.",
                 TICKET_CREATED_SUCCESSFULLY: "O seu ticket foi criado com sucesso!",
             },

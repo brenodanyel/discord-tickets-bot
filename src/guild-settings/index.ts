@@ -6,6 +6,7 @@ export interface TicketSettings {
         CREATE_NEW: string;
         OPENED_CATEGORY: string;
         CLOSED_CATEGORY: string;
+        BACKUP_CHANNEL: string;
     };
     PREDEFINED_MESSAGES: {
         TICKET_CHANNEL_MESSAGE_CONTENT: {
@@ -24,6 +25,12 @@ export interface TicketSettings {
             title: string;
         };
         CLOSE_TICKET_MESSAGE_CONTENT: {
+            title: string;
+            color: number;
+            description: string;
+        };
+        CLOSED_TICKET_MESSAGE_SENT_TO_USER: string;
+        TICKET_REOPENED_CONTENT: {
             title: string;
             color: number;
             description: string;

@@ -4,7 +4,7 @@ import "./src/guild-settings";
 import { Tickets } from "./src/tickets";
 
 const client = new Client({
-    intents: [GatewayIntentBits.GuildMessages, GatewayIntentBits.Guilds],
+    intents: [GatewayIntentBits.GuildMessages, GatewayIntentBits.Guilds, GatewayIntentBits.MessageContent],
 });
 
 client.on(Events.ClientReady, (bot) => {
