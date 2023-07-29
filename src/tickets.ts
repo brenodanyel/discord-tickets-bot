@@ -269,13 +269,14 @@ export class Tickets {
             name: `${category.emoji?.name}-${user.username}`,
             parent: parent.id,
             topic: JSON.stringify(topic),
+            permissionOverwrites: [
+                { id: guild.id, deny: ["SendMessages", "ViewChannel"] },
+                { id: user.id, allow: ["SendMessages", "ViewChannel"] },
+            ],
         });
 
         const msg = await channel.send("@everyone");
         if (msg?.deletable) await msg.delete().catch(() => null);
-
-        await channel.permissionOverwrites.edit(guild.id, { SendMessages: false, ViewChannel: false });
-        await channel.permissionOverwrites.edit(user.id, { SendMessages: true, ViewChannel: true });
 
         await channel.send(this.getMessageTicketCreatedContent(guild, user, category.label, variant));
         await channel.send(this.getMessageTicketCloseContent(guild, variant));
