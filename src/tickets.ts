@@ -1,253 +1,269 @@
 import {
-  ActionRowBuilder,
-  Client,
-  EmbedBuilder,
-  Events,
-  Guild,
-  Message,
-  MessageCreateOptions,
-  SelectMenuBuilder,
-  TextChannel,
-  SelectMenuInteraction,
-  APISelectMenuOption,
-  ChannelType,
-  CategoryChannel,
-  User,
-  ButtonBuilder,
-  ButtonStyle,
-} from 'discord.js';
-
-import {
-  TICKET_CHANNEL_ID,
-  GUILD_ID,
-  TICKET_MESSAGE_ID,
-  TICKET_CATEGORIES,
-  TICKET_CHANNEL_MESSAGE_CONTENT,
-  TICKETS_OPENED_CATEGORY,
-  TICKETS_CLOSED_CATEGORY,
-} from '../settings';
+    APISelectMenuOption,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonInteraction,
+    ButtonStyle,
+    ChannelType,
+    Client,
+    EmbedBuilder,
+    Guild,
+    MessageCreateOptions,
+    MessageEditOptions,
+    OAuth2Guild,
+    StringSelectMenuBuilder,
+    StringSelectMenuInteraction,
+    TextChannel,
+    User,
+} from "discord.js";
+import { GetGuildSetting } from "./guild-settings";
 
 export class Tickets {
-  constructor(
-    private bot: Client
-  ) {
-    this.setup();
-  }
-
-  private async setup(): Promise<void> {
-    await this.checkMessage();
-
-    this.bot.on(Events.InteractionCreate, (interaction) => {
-      if (!interaction.isSelectMenu()) {
-        return;
-      }
-
-      this.handleInteraction(interaction);
-    });
-  }
-
-  private async handleInteraction(interaction: SelectMenuInteraction): Promise<boolean> {
-    if (interaction.customId === 'ticket_creation') {
-      await this.handleTicketCreation(interaction);
-      return true;
+    constructor(private bot: Client) {
+        this.setup();
     }
 
-    return false;
-  }
+    private async setup() {
+        const guilds = await this.bot.guilds.fetch().catch(() => []);
+        guilds.forEach((guild) => this.setupTicketCreationChannel(guild));
 
-  private async handleTicketCreation(interaction: SelectMenuInteraction): Promise<void> {
-    const [reason] = interaction.values;
+        this.bot.on("interactionCreate", async (interaction) => {
+            if (!interaction.isButton() && !interaction.isStringSelectMenu()) return;
 
-    const category = this.findCategoryByReason(reason);
+            await interaction.deferReply({ ephemeral: true });
 
-    if (!category) {
-      return;
+            try {
+                if (interaction.customId === "ticket_creation") {
+                    await this.handleTicketCreation(interaction as StringSelectMenuInteraction);
+                }
+                if (interaction.customId === "finish_ticket") {
+                    await this.handleTicketClose(interaction as ButtonInteraction);
+                }
+            } catch (e) {
+                console.error(e);
+                await interaction.editReply({ content: "An error has occurred!" });
+            }
+        });
     }
 
-    if (!interaction.guild) {
-      return;
+    private async handleTicketCreation(interaction: StringSelectMenuInteraction) {
+        const [reason] = interaction.values;
+
+        if (!interaction.guild) return;
+        if (!interaction.channel) return;
+
+        const topic = (interaction.channel as TextChannel).topic;
+        if (!topic) throw new Error("Topic not found!");
+
+        const { variant } = JSON.parse(topic);
+
+        const { TICKET_SETTINGS } = GetGuildSetting(interaction.guild.id);
+
+        const settings = TICKET_SETTINGS[variant];
+        if (!settings) throw new Error(`Settings for variant ${variant} not found!`);
+
+        const category = settings.CATEGORIES.find((category) => category.value === reason);
+        if (!category) throw new Error(`Category ${reason} not found!`);
+
+        const existentChannel = await this.findTicketByUserAndReason(interaction.guild, interaction.user.id, reason);
+
+        if (existentChannel) {
+            interaction.editReply({ content: settings.PREDEFINED_MESSAGES.ALREADY_HAVE_A_TICKET + " (" + existentChannel.toString() + ")" });
+            return;
+        }
+
+        const channel = await this.createTicket(interaction.guild, interaction.user, category, variant);
+
+        interaction.editReply({ content: settings.PREDEFINED_MESSAGES.TICKET_CREATED_SUCCESSFULLY + " (" + channel.toString() + ")" });
     }
 
-    const existentChannel = await this.findTicketByUserAndReason(interaction.guild, interaction.user.id, category.label);
+    private async handleTicketClose(interaction: ButtonInteraction) {
+        if (!interaction.guild) return;
+        if (!interaction.channel) return;
 
-    if (existentChannel) {
-      interaction.reply({
-        content: `Você já possui um ticket aberto sobre este assunto (${existentChannel})`,
-        ephemeral: true,
-      });
-      return;
+        const topic = (interaction.channel as TextChannel).topic;
+        if (!topic) throw new Error("Topic not found!");
+
+        const { variant } = JSON.parse(topic);
+
+        const { TICKET_SETTINGS } = GetGuildSetting(interaction.guild.id);
+
+        const settings = TICKET_SETTINGS[variant];
+        if (!settings) throw new Error(`Settings for variant ${variant} not found!`);
+
+        const parent = await interaction.guild.channels.fetch(settings.CHANNEL_IDS.CLOSED_CATEGORY).catch(() => null);
+        if (!parent) throw new Error(`Parent category ${settings.CHANNEL_IDS.CLOSED_CATEGORY} not found!`);
+
+        const channel = interaction.channel as TextChannel;
+
+        await channel.setParent(parent.id);
+
+        await channel.permissionOverwrites.edit(interaction.user.id, { ViewChannel: null });
+
+        await interaction.message.edit(this.getMessageTicketClosedContent(interaction.guild, interaction.user, variant));
+
+        await interaction.editReply({ content: "ok" });
     }
 
-    const channel = await this.createTicket(interaction.guild, interaction.user, category);
+    private async createTicket(guild: Guild, user: User, category: APISelectMenuOption, variant: string) {
+        const { TICKET_SETTINGS } = GetGuildSetting(guild.id);
 
-    interaction.reply({
-      content: `O seu ticket acabou de ser criado (${channel})`,
-      ephemeral: true,
-    });
-  }
+        const settings = TICKET_SETTINGS[variant];
+        if (!settings) throw new Error(`Settings for variant ${variant} not found!`);
 
-  private async createTicket(guild: Guild, user: User, category: APISelectMenuOption) {
-    const parent = await this.getTicketCategoryChannel(guild, 'OPENED');
+        const parent = await guild.channels.fetch(settings.CHANNEL_IDS.OPENED_CATEGORY).catch(() => null);
+        if (!parent) throw new Error(`Parent category ${settings.CHANNEL_IDS.OPENED_CATEGORY} not found!`);
 
-    const topic = {
-      userId: user.id,
-      reason: category.label,
-    };
+        const topic = {
+            userId: user.id,
+            reason: category.value,
+            variant,
+        };
 
-    const channel = await guild.channels.create({
-      type: ChannelType.GuildText,
-      name: `${category.emoji?.name}-${user.tag}`,
-      parent,
-      topic: JSON.stringify(topic),
-      permissionOverwrites: [],
-    }) as TextChannel;
+        const channel: TextChannel = await guild.channels.create({
+            type: ChannelType.GuildText,
+            name: `${category.emoji?.name}-${user.tag}`,
+            parent: parent.id,
+            topic: JSON.stringify(topic),
+        });
 
-    const content = this.getMessageTicketCreatedContent(user, category.label);
+        await channel.permissionOverwrites.edit(guild.id, { ViewChannel: false });
+        await channel.permissionOverwrites.edit(user.id, { ViewChannel: true });
 
-    await channel.send(content);
+        await channel.send(this.getMessageTicketCreatedContent(guild, user, category.label, variant));
+        await channel.send(this.getMessageTicketCloseContent(guild, variant));
 
-    await this.sendTicketCloseMessage(channel);
-
-    return channel;
-  }
-
-  private async sendTicketCloseMessage(channel: TextChannel) {
-    const content = this.getMessageTicketCloseContent();
-    await channel.send(content);
-  }
-
-  private async getTicketCategoryChannel(guild: Guild, method: 'OPENED' | 'CLOSED'): Promise<CategoryChannel> {
-    const id = method === 'OPENED'
-      ? TICKETS_OPENED_CATEGORY
-      : TICKETS_CLOSED_CATEGORY;
-
-    const name = method === 'OPENED'
-      ? 'Tickets Abertos'
-      : 'Tickets Fechados';
-
-    try {
-      const existentChannel = await guild.channels.fetch(id);
-
-      if (existentChannel?.type !== 4) {
-        throw new Error();
-      }
-
-      return existentChannel;
+        return channel;
     }
-    catch {
-      const channel = await guild.channels.create({ type: ChannelType.GuildCategory, name });
-      return channel;
+
+    private async findTicketByUserAndReason(guild: Guild, userId: string, reason: string) {
+        const channels = await guild.channels.fetch();
+
+        const channel = channels.find((channel) => {
+            // todo: verificar se o ticket está aberto ou fechado, se está fechado retorna false
+
+            if (!channel) return false;
+            if (channel.type !== 0) return false;
+            if (!channel.topic) return false;
+
+            const topic = JSON.parse(channel.topic);
+            if (topic.userId !== userId) return false;
+            if (topic.reason !== reason) return false;
+
+            return true;
+        });
+
+        return channel;
     }
-  }
 
-  private async findTicketByUserAndReason(guild: Guild, userId: string, reason: string): Promise<TextChannel | null> {
-    const channels = await guild.channels.fetch();
-    const channel = channels.find((channel) => {
-      if (channel?.type !== 0) {
-        return false;
-      };
+    private async setupTicketCreationChannel(guild: OAuth2Guild) {
+        const { TICKET_SETTINGS } = GetGuildSetting(guild.id);
 
-      const topic = JSON.parse(channel.topic || '{}');
+        for (const [variant, settings] of Object.entries(TICKET_SETTINGS)) {
+            try {
+                const channelID = settings.CHANNEL_IDS.CREATE_NEW;
 
-      if (topic.userId !== userId) {
-        return false;
-      }
+                const channel = await this.bot.channels
+                    .fetch(channelID)
+                    .then((channel) => channel as TextChannel)
+                    .catch(() => null);
 
-      if (topic.reason !== reason) {
-        return false;
-      }
+                if (!channel) throw new Error('Canal de tickets ("CREATE_NEW") não encontrado!');
 
-      return true;
-    });
+                await channel.permissionOverwrites.edit(guild.id, {
+                    SendMessages: false,
+                    AddReactions: false,
+                });
 
-    return channel as TextChannel;
-  }
+                channel.setTopic(JSON.stringify({ variant }));
 
-  private findCategoryByReason(reason: string) {
-    return TICKET_CATEGORIES.find((category) => category.value === reason);
-  }
+                await channel.bulkDelete(100).catch(() => null);
 
-  private async checkMessage(): Promise<void> {
-    try {
-      const guild = await this.bot.guilds.fetch(GUILD_ID).catch(() => { }) as Guild;
-
-      if (!guild) {
-        console.log('Erro: Guild não encontrada!');
-        return;
-      }
-
-      const channel = await guild.channels.fetch(TICKET_CHANNEL_ID).catch(() => { }) as TextChannel;
-
-      if (!channel) {
-        console.log('Erro: Canal de tickets não encontrado!');
-        return;
-      }
-
-      const message = await channel.messages.fetch(TICKET_MESSAGE_ID).catch(() => { }) as Message;
-
-      const content = this.getTicketMessageCreationContent();
-
-      if (message) {
-        await message.edit(content);
-      } else {
-        await channel.send(content);
-      }
-
-      console.log('Ticket configurado com sucesso!');
+                await channel.send(this.getTicketMessageCreationContent(guild.id, variant));
+            } catch (e: any) {
+                console.log(`Erro ao configurar ticket '${variant}' da guild '${guild.name}' ('${guild.id}')!`);
+                console.log(e.message || "Erro desconhecido!");
+            }
+        }
     }
-    catch (e) {
-      console.log(e);
+
+    private getTicketMessageCreationContent(guildId: string, variant: string): MessageCreateOptions {
+        const { TICKET_SETTINGS } = GetGuildSetting(guildId);
+
+        const settings = TICKET_SETTINGS[variant];
+        if (!settings) throw new Error(`Ticket variant '${variant}' not found!`);
+
+        const embed = new EmbedBuilder()
+            .setColor(settings.PREDEFINED_MESSAGES.TICKET_CHANNEL_MESSAGE_CONTENT.color)
+            .setTitle(settings.PREDEFINED_MESSAGES.TICKET_CHANNEL_MESSAGE_CONTENT.title)
+            .setDescription(settings.PREDEFINED_MESSAGES.TICKET_CHANNEL_MESSAGE_CONTENT.description);
+
+        const builder = new StringSelectMenuBuilder()
+            .setCustomId("ticket_creation")
+            .setPlaceholder(settings.PREDEFINED_MESSAGES.TICKET_CHANNEL_MESSAGE_CONTENT.placeholder)
+            .addOptions(...settings.CATEGORIES);
+
+        const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(builder);
+
+        return {
+            embeds: [embed],
+            components: [row],
+        };
     }
-  }
 
-  private getTicketMessageCreationContent(): MessageCreateOptions {
-    const embed = new EmbedBuilder();
-    embed.setColor(TICKET_CHANNEL_MESSAGE_CONTENT.color);
-    embed.setTitle(TICKET_CHANNEL_MESSAGE_CONTENT.title);
-    embed.setDescription(TICKET_CHANNEL_MESSAGE_CONTENT.description);
+    private getMessageTicketCreatedContent(guild: Guild, user: User, category: string, variant: string): MessageCreateOptions {
+        const { TICKET_SETTINGS } = GetGuildSetting(guild.id);
 
-    const builder = new SelectMenuBuilder();
-    builder.setCustomId('ticket_creation');
-    builder.setPlaceholder('Selecione um assunto');
-    builder.addOptions(...TICKET_CATEGORIES);
+        const settings = TICKET_SETTINGS[variant];
+        if (!settings) throw new Error(`Ticket variant '${variant}' not found!`);
 
-    const row = new ActionRowBuilder<SelectMenuBuilder>();
-    row.addComponents(builder);
+        const embed = new EmbedBuilder()
+            .setColor(settings.PREDEFINED_MESSAGES.TICKET_CREATED_MESSAGE_CONTENT.color)
+            .setTitle(`Ticket (${category})`)
+            .setDescription(settings.PREDEFINED_MESSAGES.TICKET_CREATED_MESSAGE_CONTENT.description.replace("__USER__", user.toString()));
 
-    return {
-      embeds: [embed],
-      components: [row],
-    };
-  }
+        return {
+            embeds: [embed],
+        };
+    }
+    private getMessageTicketClosedContent(guild: Guild, user: User, variant: string): MessageEditOptions {
+        const { TICKET_SETTINGS } = GetGuildSetting(guild.id);
 
-  private getMessageTicketCreatedContent(user: User, category: string): MessageCreateOptions {
-    const embed = new EmbedBuilder();
-    embed.setColor(0x0099FF);
-    embed.setTitle(`Ticket (${category})`);
-    embed.setDescription(`Olá ${user}! este é o seu ticket, faça uma breve descrição sobre o assunto que deseja tratar e aguarde por um membro da equipe.`);
+        const settings = TICKET_SETTINGS[variant];
+        if (!settings) throw new Error(`Ticket variant '${variant}' not found!`);
 
-    return {
-      embeds: [embed],
-    };
-  }
+        const embed = new EmbedBuilder()
+            .setColor(settings.PREDEFINED_MESSAGES.TICKET_CLOSED_MESSAGE_CONTENT.color)
+            .setTitle(settings.PREDEFINED_MESSAGES.TICKET_CLOSED_MESSAGE_CONTENT.title)
+            .setDescription(settings.PREDEFINED_MESSAGES.TICKET_CLOSED_MESSAGE_CONTENT.description.replace("__USER__", user.toString()));
 
-  private getMessageTicketCloseContent(): MessageCreateOptions {
-    const embed = new EmbedBuilder();
-    embed.setColor(0xFF0000);
-    embed.setTitle('Encerrar Ticket');
-    embed.setDescription('Caso já esteja satisfeito, você pode clicar no botão abaixo para finalizar o seu atendimento.');
+        return {
+            embeds: [embed],
+            components: [],
+        };
+    }
 
-    const builder = new ButtonBuilder();
-    builder.setCustomId('finish_ticket');
-    builder.setLabel('Encerrar ticket');
-    builder.setStyle(ButtonStyle.Danger);
+    private getMessageTicketCloseContent(guild: Guild, variant: string): MessageCreateOptions {
+        const { TICKET_SETTINGS } = GetGuildSetting(guild.id);
 
-    const row = new ActionRowBuilder<ButtonBuilder>();
-    row.addComponents(builder);
+        const settings = TICKET_SETTINGS[variant];
+        if (!settings) throw new Error(`Ticket variant '${variant}' not found!`);
 
-    return {
-      embeds: [embed],
-      components: [row],
-    };
-  }
+        const embed = new EmbedBuilder()
+            .setColor(settings.PREDEFINED_MESSAGES.CLOSE_TICKET_MESSAGE_CONTENT.color)
+            .setTitle(settings.PREDEFINED_MESSAGES.CLOSE_TICKET_MESSAGE_CONTENT.title)
+            .setDescription(settings.PREDEFINED_MESSAGES.CLOSE_TICKET_MESSAGE_CONTENT.description);
+
+        const builder = new ButtonBuilder()
+            .setCustomId("finish_ticket")
+            .setLabel(settings.PREDEFINED_MESSAGES.CLOSE_TICKET_MESSAGE_CONTENT.title)
+            .setStyle(ButtonStyle.Danger);
+
+        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(builder);
+
+        return {
+            embeds: [embed],
+            components: [row],
+        };
+    }
 }
