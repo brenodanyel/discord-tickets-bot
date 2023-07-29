@@ -105,6 +105,7 @@ export class Tickets {
         await channel.setParent(parent.id);
 
         await channel.permissionOverwrites.edit(interaction.user.id, { ViewChannel: null });
+        await channel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: false });
 
         await interaction.message.edit(this.getMessageTicketClosedContent(interaction.guild, interaction.user, variant, true));
 
@@ -133,6 +134,7 @@ export class Tickets {
 
         await channel.setParent(parent.id);
 
+        await channel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: false });
         await channel.permissionOverwrites.edit(interaction.user.id, { ViewChannel: true });
 
         await interaction.message.edit(this.getMessageTicketClosedContent(interaction.guild, interaction.user, variant, false));
@@ -294,33 +296,38 @@ export class Tickets {
     }
 
     private async setupTicketCreationChannel(guild: OAuth2Guild) {
-        const { TICKET_SETTINGS } = GetGuildSetting(guild.id);
+        try {
+            const { TICKET_SETTINGS } = GetGuildSetting(guild.id);
 
-        for (const [variant, settings] of Object.entries(TICKET_SETTINGS)) {
-            try {
-                const channelID = settings.CHANNEL_IDS.CREATE_NEW;
+            for (const [variant, settings] of Object.entries(TICKET_SETTINGS)) {
+                try {
+                    const channelID = settings.CHANNEL_IDS.CREATE_NEW;
 
-                const channel = await this.bot.channels
-                    .fetch(channelID)
-                    .then((channel) => channel as TextChannel)
-                    .catch(() => null);
+                    const channel = await this.bot.channels
+                        .fetch(channelID)
+                        .then((channel) => channel as TextChannel)
+                        .catch(() => null);
 
-                if (!channel) throw new Error('Canal de tickets ("CREATE_NEW") não encontrado!');
+                    if (!channel) throw new Error('Canal de tickets ("CREATE_NEW") não encontrado!');
 
-                await channel.permissionOverwrites.edit(guild.id, {
-                    SendMessages: false,
-                    AddReactions: false,
-                });
+                    await channel.permissionOverwrites.edit(guild.id, {
+                        SendMessages: false,
+                        AddReactions: false,
+                    });
 
-                channel.setTopic(JSON.stringify({ variant }));
+                    channel.setTopic(JSON.stringify({ variant }));
 
-                await channel.bulkDelete(100).catch(() => null);
+                    await channel.bulkDelete(100).catch(() => null);
 
-                await channel.send(this.getTicketMessageCreationContent(guild.id, variant));
-            } catch (e: any) {
-                console.log(`Erro ao configurar ticket '${variant}' da guild '${guild.name}' ('${guild.id}')!`);
-                console.log(e.message || "Erro desconhecido!");
+                    await channel.send(this.getTicketMessageCreationContent(guild.id, variant));
+                } catch (e: any) {
+                    console.log(`Erro ao configurar ticket '${variant}' da guild '${guild.name}' ('${guild.id}')!`);
+                    console.log(e.message || "Erro desconhecido!");
+                }
             }
+        } catch (e: any) {
+            console.log(`Erro ao configurar tickets da guild '${guild.name}' ('${guild.id}')!`);
+            console.log(e.message || "Erro desconhecido!");
         }
     }
 
