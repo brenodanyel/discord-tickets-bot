@@ -92,7 +92,7 @@ export class Tickets {
 
         if (!channel.topic) throw new Error("Topic not found!");
 
-        const { variant } = JSON.parse(channel.topic);
+        const { userId, variant } = JSON.parse(channel.topic);
 
         const { TICKET_SETTINGS } = GetGuildSetting(interaction.guild.id);
 
@@ -104,8 +104,9 @@ export class Tickets {
 
         await channel.setParent(parent.id);
 
-        await channel.permissionOverwrites.edit(interaction.user.id, { ViewChannel: null });
-        await channel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: false });
+        const owner = await interaction.guild.members.fetch(userId).catch(() => null);
+
+        if (owner) await channel.permissionOverwrites.edit(owner.id, { SendMessages: false, ViewChannel: false });
 
         await interaction.message.edit(this.getMessageTicketClosedContent(interaction.guild, interaction.user, variant, true));
 
@@ -134,8 +135,7 @@ export class Tickets {
 
         await channel.setParent(parent.id);
 
-        await channel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: false });
-        await channel.permissionOverwrites.edit(interaction.user.id, { ViewChannel: true });
+        await channel.permissionOverwrites.edit(interaction.user.id, { SendMessages: true, ViewChannel: true });
 
         await interaction.message.edit(this.getMessageTicketClosedContent(interaction.guild, interaction.user, variant, false));
 
@@ -167,7 +167,7 @@ export class Tickets {
 
         if (!channel.topic) throw new Error("Topic not found!");
 
-        const { variant } = JSON.parse(channel.topic);
+        const { variant, userId } = JSON.parse(channel.topic);
 
         const { TICKET_SETTINGS } = GetGuildSetting(interaction.guild.id);
 
@@ -209,15 +209,23 @@ export class Tickets {
             output.push(infos.join("\n"));
         });
 
-        await interaction.user.send({
-            content: settings.PREDEFINED_MESSAGES.CLOSED_TICKET_MESSAGE_SENT_TO_USER,
-            files: [
-                {
-                    attachment: Buffer.from(output.join("\n\n")),
-                    name: new Date().toLocaleString("pt-BR") + ".txt",
-                },
-            ],
-        });
+        const buffer = Buffer.from(output.join("\n\n"));
+
+        const owner = await interaction.guild.members.fetch(userId).catch(() => null);
+
+        if (owner) {
+            await owner
+                .send({
+                    content: settings.PREDEFINED_MESSAGES.CLOSED_TICKET_MESSAGE_SENT_TO_USER,
+                    files: [
+                        {
+                            attachment: buffer,
+                            name: new Date().toLocaleString("pt-BR") + ".txt",
+                        },
+                    ],
+                })
+                .catch(() => null);
+        }
 
         const backupChannel = await interaction.guild.channels
             .fetch(settings.CHANNEL_IDS.BACKUP_CHANNEL)
@@ -226,15 +234,17 @@ export class Tickets {
 
         if (!backupChannel) throw new Error(`Backup channel ${settings.CHANNEL_IDS.BACKUP_CHANNEL} not found!`);
 
-        await backupChannel.send({
-            content: `O ticket "${channel.name}" (${channel.toString()}) foi fechado por ${interaction.user.toString()}, segue o backup:`,
-            files: [
-                {
-                    attachment: Buffer.from(output.join("\n\n")),
-                    name: new Date().toLocaleString("pt-BR") + ".txt",
-                },
-            ],
-        });
+        await backupChannel
+            .send({
+                content: `O ticket "${channel.name}" (${channel.toString()}) foi fechado por ${interaction.user.toString()}, segue o backup:`,
+                files: [
+                    {
+                        attachment: buffer,
+                        name: new Date().toLocaleString("pt-BR") + ".txt",
+                    },
+                ],
+            })
+            .catch(() => null);
 
         await interaction.editReply({ content: "ok" });
     }
@@ -256,13 +266,16 @@ export class Tickets {
 
         const channel: TextChannel = await guild.channels.create({
             type: ChannelType.GuildText,
-            name: `${category.emoji?.name}-${user.tag}`,
+            name: `${category.emoji?.name}-${user.username}`,
             parent: parent.id,
             topic: JSON.stringify(topic),
         });
 
-        await channel.permissionOverwrites.edit(guild.id, { ViewChannel: false });
-        await channel.permissionOverwrites.edit(user.id, { ViewChannel: true });
+        const msg = await channel.send("@everyone");
+        if (msg?.deletable) await msg.delete().catch(() => null);
+
+        await channel.permissionOverwrites.edit(guild.id, { SendMessages: false, ViewChannel: false });
+        await channel.permissionOverwrites.edit(user.id, { SendMessages: true, ViewChannel: true });
 
         await channel.send(this.getMessageTicketCreatedContent(guild, user, category.label, variant));
         await channel.send(this.getMessageTicketCloseContent(guild, variant));
@@ -310,10 +323,7 @@ export class Tickets {
 
                     if (!channel) throw new Error('Canal de tickets ("CREATE_NEW") não encontrado!');
 
-                    await channel.permissionOverwrites.edit(guild.id, {
-                        SendMessages: false,
-                        AddReactions: false,
-                    });
+                    await channel.permissionOverwrites.edit(guild.id, { SendMessages: false, AddReactions: false });
 
                     channel.setTopic(JSON.stringify({ variant }));
 
