@@ -17,7 +17,7 @@ import {
 import { GetGuildSetting } from "./guild-settings";
 
 export class Tickets {
-    constructor(private bot: Client) {
+    constructor(private bot: Client<true>) {
         this.setup();
     }
 
@@ -27,6 +27,7 @@ export class Tickets {
 
         this.bot.on("interactionCreate", async (interaction) => {
             if (!interaction.isButton() && !interaction.isStringSelectMenu()) return;
+            if (interaction.message.author.id !== this.bot.user.id) return;
 
             await interaction.deferReply({ ephemeral: true });
 
