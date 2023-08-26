@@ -29,7 +29,7 @@ export class Tickets {
             if (!interaction.isButton() && !interaction.isStringSelectMenu()) return;
             if (interaction.message.author.id !== this.bot.user.id) return;
 
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ ephemeral: true }).catch(() => {});
 
             try {
                 if (interaction.customId === "create_ticket") {
@@ -49,7 +49,7 @@ export class Tickets {
                 }
             } catch (e) {
                 console.error(e);
-                await interaction.editReply({ content: "An error has occurred!" });
+                await interaction.editReply({ content: "An error has occurred!" }).catch(() => {});;
             }
         });
     }
@@ -73,14 +73,16 @@ export class Tickets {
         const category = settings.CATEGORIES.find((category) => category.value === reason);
         if (!category) throw new Error(`Category ${reason} not found!`);
 
-        const existentChannel = await this.findTicketByUserAndReason(interaction.guild, interaction.user.id, reason, variant);
+        const existentChannel = await this.findTicketByUserAndReason(interaction.guild, interaction.user.id, reason, variant).catch(() => null);
 
         if (existentChannel) {
             interaction.editReply({ content: settings.PREDEFINED_MESSAGES.ALREADY_HAVE_A_TICKET + " (" + existentChannel.toString() + ")" });
             return;
         }
 
-        const channel = await this.createTicket(interaction.guild, interaction.user, category, variant);
+        const channel = await this.createTicket(interaction.guild, interaction.user, category, variant).catch(() => null);
+
+        if (!channel) return
 
         interaction.editReply({ content: settings.PREDEFINED_MESSAGES.TICKET_CREATED_SUCCESSFULLY + " (" + channel.toString() + ")" });
     }
@@ -109,7 +111,7 @@ export class Tickets {
 
         if (owner) await channel.permissionOverwrites.edit(owner.id, { SendMessages: false, ViewChannel: false });
 
-        await interaction.message.edit(this.getMessageTicketClosedContent(interaction.guild, interaction.user, variant, true));
+        await interaction.message.edit(this.getMessageTicketClosedContent(interaction.guild, interaction.user, variant, true)).catch(() => {});
 
         await this.handleBackupTicket(interaction);
 
@@ -134,17 +136,17 @@ export class Tickets {
         const parent = await interaction.guild.channels.fetch(settings.CHANNEL_IDS.OPENED_CATEGORY).catch(() => null);
         if (!parent) throw new Error(`Parent category ${settings.CHANNEL_IDS.OPENED_CATEGORY} not found!`);
 
-        await channel.setParent(parent.id);
+        await channel.setParent(parent.id).catch(() => {});
 
-        await channel.permissionOverwrites.edit(interaction.user.id, { SendMessages: true, ViewChannel: true });
+        await channel.permissionOverwrites.edit(interaction.user.id, { SendMessages: true, ViewChannel: true }).catch(() => {});
 
-        await interaction.message.edit(this.getMessageTicketClosedContent(interaction.guild, interaction.user, variant, false));
+        await interaction.message.edit(this.getMessageTicketClosedContent(interaction.guild, interaction.user, variant, false)).catch(() => {});
 
-        await channel.send(this.getMessageTicketReopenedContent(interaction.guild, interaction.user, variant));
+        await channel.send(this.getMessageTicketReopenedContent(interaction.guild, interaction.user, variant)).catch(() => {});
 
-        await channel.send(this.getMessageTicketCloseContent(interaction.guild, variant));
+        await channel.send(this.getMessageTicketCloseContent(interaction.guild, variant)).catch(() => {});
 
-        await interaction.editReply({ content: "ok" });
+        await interaction.editReply({ content: "ok" }).catch(() => {});
     }
 
     private async handleTicketDelete(interaction: ButtonInteraction) {
@@ -154,10 +156,10 @@ export class Tickets {
         const channel = interaction.channel as TextChannel;
 
         setTimeout(() => {
-            channel.delete("Ticket deleted by administrator.");
+            channel.delete("Ticket deleted by administrator.").catch(() => {});
         }, 500);
 
-        await interaction.editReply({ content: "ok" });
+        await interaction.editReply({ content: "ok" }).catch(() => {});
     }
 
     private async handleBackupTicket(interaction: ButtonInteraction) {
@@ -175,7 +177,7 @@ export class Tickets {
         const settings = TICKET_SETTINGS[variant];
         if (!settings) throw new Error(`Settings for variant ${variant} not found!`);
 
-        const messages = await channel.messages.fetch({ limit: 100 });
+        const messages = await channel.messages.fetch({ limit: 100 }).catch(() => ([]));
 
         const output: string[] = [];
 
@@ -247,7 +249,7 @@ export class Tickets {
             })
             .catch(() => null);
 
-        await interaction.editReply({ content: "ok" });
+        await interaction.editReply({ content: "ok" }).catch(() => {});
     }
 
     private async createTicket(guild: Guild, user: User, category: APISelectMenuOption, variant: string) {
@@ -331,7 +333,7 @@ export class Tickets {
 
                     await channel.bulkDelete(100).catch(() => null);
 
-                    await channel.send(this.getTicketMessageCreationContent(guild.id, variant));
+                    await channel.send(this.getTicketMessageCreationContent(guild.id, variant)).catch(() => {});
                 } catch (e: any) {
                     console.log(`Erro ao configurar ticket '${variant}' da guild '${guild.name}' ('${guild.id}')!`);
                     console.log(e.message || "Erro desconhecido!");
